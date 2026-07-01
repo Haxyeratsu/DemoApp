@@ -236,24 +236,6 @@ app.post('/logout', (req, res) => {
     });
 });
 
-app.get('/dashboard', requireAuth, (req, res) => {
-    res.send(`
-        <h1>Dashboard</h1>
-        <p>Welcome, ${req.user.username}.</p>
-        <p>You are authenticated and can view this page.</p>
-        <button onclick="logout()">Logout</button>
-        <script>
-            async function logout() {
-                const response = await fetch('/logout', { method: 'POST' });
-                const data = await response.json();
-                if (data.success) {
-                    window.location.href = '/';
-                }
-            }
-        </script>
-    `);
-});
-
 app.get('/helloroute', requireAuth, (req, res) => {
     res.send(`
         <h1>Hello Route</h1>
@@ -274,6 +256,53 @@ app.get('/auth/status', (req, res) => {
             authenticated: false
         });
     }
+});
+
+
+// payment user
+function getPaymentsForUser(userId) {
+    // read the Excel file
+    const filePath = path.join(__dirname, 'data', 'payments.xlsx');
+    if (!fs.existsSync(filePath)) {
+        return [];
+    }
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+    return rows.filter(row => String(row.userId) === String(userId));
+}
+
+// dashboard route
+app.get('/dashboard', requireAuth, (req, res) => {
+    const userId = req.user.id;
+    const payments = getPaymentsForUser(userId);
+    res.send(`
+        <h1>Dashboard</h1>
+        <p>Welcome, ${req.user.username}.</p>
+        <h2>Your Payments</h2>
+        <table border="1">
+            <tr><th>Amount</th><th>Date</th><th>Description</th></tr>
+            ${payments.map(p => `
+                <tr>
+                    <td>$${p.amount}</td>
+                    <td>${p.date}</td>
+                    <td>${p.description}</td>
+                </tr>
+            `).join('')}
+        </table>
+        <br>
+        <button onclick="logout()">Logout</button>
+        <script>
+            async function logout() {
+                const response = await fetch('/logout', { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = '/';
+                }
+            }
+        </script>
+    `);
 });
 
 app.listen(port, () => console.log(`Server running on port ${port}`));
