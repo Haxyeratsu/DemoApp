@@ -11,7 +11,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(session({
-    secret: 'your-secret-key-change-in-production',
+    secret: '0101010101',
     resave: false,
     saveUninitialized: false,
     cookie: {
