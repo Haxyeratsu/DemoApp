@@ -2,6 +2,8 @@ const express = require('express');
 const session = require('express-session');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const port = 9999;
@@ -16,11 +18,32 @@ app.use(session({
     saveUninitialized: false,
     cookie: {
         secure: false,
-        maxAge: 86400000 //24 hours
+        maxAge: 86400000 // 24 hours
     }
 }));
 
-// User data
+const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    message: {
+        success: false,
+        message: 'Too many login attempts. Please try again later.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const signupLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 3,
+    message: {
+        success: false,
+        message: 'Too many signup attempts. Please try again later.'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 const USERS_FILE = path.join(__dirname, 'users.json');
 
 if (!fs.existsSync(USERS_FILE)) {
@@ -47,7 +70,7 @@ function writeUsers(users) {
     }
 }
 
-// Authentication logging middleware
+//Authentication middleware
 function authenticationEvent(req, res, next) {
     if (req.session.user) {
         console.log(`User authenticated: ${req.session.user.username}`);
@@ -58,7 +81,6 @@ function authenticationEvent(req, res, next) {
     next();
 }
 
-// Protected route middleware
 function requireAuth(req, res, next) {
     if (req.session.user) {
         next();
@@ -84,8 +106,8 @@ app.get('/signup', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'signup.html'));
 });
 
-// Login endpoint
-app.post('/login', (req, res) => {
+// Login endpoint with rate limiting
+app.post('/login', loginLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -105,11 +127,19 @@ app.post('/login', (req, res) => {
         });
     }
 
-    // In production, use bcrypt.compare()
-    if (password !== user.password) {
-        return res.status(401).json({
+    try {
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (!passwordMatch) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid password.'
+            });
+        }
+    } catch (error) {
+        console.error('Error comparing passwords:', error);
+        return res.status(500).json({
             success: false,
-            message: 'Invalid password.'
+            message: 'Internal server error.'
         });
     }
 
@@ -126,8 +156,8 @@ app.post('/login', (req, res) => {
     });
 });
 
-// Signup endpoint
-app.post('/signup', (req, res) => {
+// sign up end point
+app.post('/signup', signupLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
@@ -160,10 +190,23 @@ app.post('/signup', (req, res) => {
         });
     }
 
+    // hashed pass with bcrypt
+    const saltRounds = 10;
+    let hashedPassword;
+    try {
+        hashedPassword = await bcrypt.hash(password, saltRounds);
+    } catch (error) {
+        console.error('Error hashing password:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Internal server error.'
+        });
+    }
+
     const newUser = {
         id: Date.now().toString(),
         username: username,
-        password: password
+        password: hashedPassword
     };
 
     users.push(newUser);
@@ -177,7 +220,6 @@ app.post('/signup', (req, res) => {
     });
 });
 
-// Logout endpoint
 app.post('/logout', (req, res) => {
     req.session.destroy((err) => {
         if (err) {
@@ -193,7 +235,6 @@ app.post('/logout', (req, res) => {
     });
 });
 
-// Protected routes
 app.get('/dashboard', requireAuth, (req, res) => {
     res.send(`
         <h1>Dashboard</h1>
@@ -221,7 +262,6 @@ app.get('/helloroute', requireAuth, (req, res) => {
     `);
 });
 
-//Authentication status endpoint
 app.get('/auth/status', (req, res) => {
     if (req.session.user) {
         res.json({
