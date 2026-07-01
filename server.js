@@ -2,7 +2,7 @@ const express = require('express');
 const session = require('express-session');
 const fs = require('fs');
 const path = require('path');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
